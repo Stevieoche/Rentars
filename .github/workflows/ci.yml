@@ -558,7 +558,64 @@ jobs:
             apps/web/test-results/
           retention-days: 14
 
-  # ─── Job 7b: Search rollout upgrade test (#747) ─────────────────────────────
+  # ─── Job 7b: Accessibility audit ────────────────────────────────────────────
+  # Runs axe-core (@axe-core/playwright) against live-rendered pages for auth,
+  # search, property detail, booking, and dashboard flows. Fails on new
+  # critical/serious violations. Known exceptions are scoped per-element in
+  # e2e/accessibility.spec.ts with a dated review comment.
+  #
+  # Local reproduction:
+  #   cd apps/web
+  #   yarn build && CI=true PORT=3001 yarn playwright test e2e/accessibility.spec.ts --project=chromium
+  accessibility-audit:
+    name: Accessibility Audit (axe)
+    runs-on: ubuntu-latest
+    needs: frontend-checks
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.0'
+          cache: yarn
+          cache-dependency-path: apps/web/yarn.lock
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: yarn install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        working-directory: apps/web
+        run: yarn playwright install --with-deps chromium
+
+      - name: Build Next.js app
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: https://mock.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: mock-anon-key
+        run: yarn build
+
+      - name: Run accessibility audit
+        working-directory: apps/web
+        env:
+          CI: true
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+          NEXT_PUBLIC_API_URL: http://localhost:3000
+          PORT: "3001"
+        run: yarn playwright test e2e/accessibility.spec.ts --project=chromium
+
+      - name: Upload accessibility report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: accessibility-report
+          path: apps/web/playwright-report/
+          retention-days: 14
+
+  # ─── Job 7c: Search rollout upgrade test (#747) ──────────────────────────────
   # Applies migration 00067 to a database that already holds listings, backfills in
   # batches, and asserts search and nearby search work and that the migration is
   # idempotent. Self-contained, so it does not depend on setup.sql.
@@ -616,6 +673,8 @@ jobs:
             apps/backend/README.md
             apps/backend/database/README.md
             apps/backend/database/MIGRATIONS_NAMING.md
+            apps/backend/tests/TEST_ISOLATION.md
+            apps/backend/tests/fixtures/README.md
           fail: true
 
   # ─── Job 9: Backup restore drill (#736) ─────────────────────────────────────
